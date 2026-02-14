@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="fa">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>ECG Monitor</title>
+
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&display=swap');
+
+*{box-sizing:border-box;margin:0;padding:0;}
+
+:root{
+ --green:#00ff88;
+ --green-glow:#00ff8866;
+ --bg:#010f0a;
+ --grid:#0a2a1a;
+}
+
+html,body{
+ width:100%;
+ height:100%;
+ background:var(--bg);
+ overflow:hidden;
+ font-family:'Orbitron', monospace;
+ cursor:none;
+}
+
+.grid-bg{
+ position:fixed;
+ inset:0;
+ background-image:
+  linear-gradient(var(--grid) 1px, transparent 1px),
+  linear-gradient(90deg,var(--grid) 1px, transparent 1px);
+ background-size:40px 40px;
+ animation:gridPulse 4s infinite;
+}
+
+@keyframes gridPulse{
+ 0%,100%{opacity:.6}
+ 50%{opacity:1}
+}
+
+.screen{
+ width:100vw;
+ height:100vh;
+ display:flex;
+ flex-direction:column;
+ align-items:center;
+ justify-content:center;
+ gap:60px;
+}
+
+.time{
+ font-size:clamp(70px,14vw,160px);
+ font-weight:900;
+ color:var(--green);
+ letter-spacing:6px;
+ text-shadow:
+ 0 0 15px var(--green),
+ 0 0 45px var(--green-glow),
+ 0 0 90px var(--green-glow);
+}
+
+.separator{
+ animation:blink 1s infinite step-end;
+}
+
+@keyframes blink{
+ 0%,49%{opacity:1}
+ 50%,100%{opacity:.1}
+}
+
+.ecg-wrap{
+ width:min(1000px,94vw);
+ height:clamp(120px,20vh,220px);
+}
+
+canvas{
+ width:100%;
+ height:100%;
+ display:block;
+}
+
+.flash{
+ position:fixed;
+ inset:0;
+ background:radial-gradient(circle, rgba(0,255,136,.2), transparent 70%);
+ opacity:0;
+ pointer-events:none;
+}
+
+.flash.beat{
+ animation:flashAnim .25s ease-out forwards;
+}
+
+@keyframes flashAnim{
+ from{opacity:1}
+ to{opacity:0}
+}
+</style>
+</head>
+
+<body>
+
+<div class="grid-bg"></div>
+<div class="flash" id="flash"></div>
+
+<div class="screen">
+
+<div class="time">
+ <span id="hh">00</span><span class="separator">:</span>
+ <span id="mm">00</span><span class="separator">:</span>
+ <span id="ss">00</span>
+</div>
+
+<div class="ecg-wrap">
+ <canvas id="ecg"></canvas>
+</div>
+
+</div>
+
+<script>
+window.addEventListener("DOMContentLoaded",()=>{
+
+
+const pad=n=>String(n).padStart(2,'0');
+
+function updateClock(){
+ const now=new Date();
+ hh.textContent=pad(now.getHours());
+ mm.textContent=pad(now.getMinutes());
+ ss.textContent=pad(now.getSeconds());
+}
+
+setInterval(updateClock,1000);
+updateClock();
+
+
+const canvas=document.getElementById("ecg");
+const ctx=canvas.getContext("2d");
+const flash=document.getElementById("flash");
+
+let W=0,H=0;
+
+function resize(){
+ const rect=canvas.getBoundingClientRect();
+ const dpr=devicePixelRatio||1;
+
+ canvas.width=rect.width*dpr;
+ canvas.height=rect.height*dpr;
+
+ W=rect.width;
+ H=rect.height;
+}
+window.addEventListener("resize",resize);
+resize();
+
+/* موج قلب */
+const WAVE=[
+ [0,0],[.03,.04],[.05,-.18],[.08,2.4],
+ [.11,-.6],[.18,0],[.24,.12],[.36,.45],
+ [.44,.12],[.50,0],[1,0]
+];
+
+function waveY(t){
+ for(let i=0;i<WAVE.length-1;i++){
+  const[x0,y0]=WAVE[i];
+  const[x1,y1]=WAVE[i+1];
+  if(t>=x0 && t<=x1){
+   return y0+(y1-y0)*(t-x0)/(x1-x0);
+  }
+ }
+ return 0;
+}
+const BPM=78;
+const SPEED=320;     
+const BEAT_SEC=60/BPM;
+
+let scrollX=0,lastTS=0,lastFlip=-1;
+
+function loop(ts){
+
+ requestAnimationFrame(loop);
+
+ if(!lastTS) lastTS=ts;
+ const dt=Math.min((ts-lastTS)/1000,.05);
+ lastTS=ts;
+
+ scrollX+=SPEED*dt;
+
+ const beatPx=BEAT_SEC*SPEED;
+ const dpr=devicePixelRatio||1;
+
+ ctx.save();
+ ctx.scale(dpr,dpr);
+ ctx.clearRect(0,0,W,H);
+
+ const midY=H/2;
+ const amp=H*.48; 
+
+ ctx.beginPath();
+ let started=false;
+
+ for(let px=0;px<=W;px++){
+  const absX=scrollX-(W-px);
+  if(absX<0) continue;
+
+  const ph=(absX%beatPx)/beatPx;
+  const y=midY-waveY(ph)*amp;
+
+  if(!started){ctx.moveTo(px,y);started=true;}
+  else ctx.lineTo(px,y);
+ }
+
+ ctx.strokeStyle="#00ff88";
+ ctx.lineWidth=3.2;
+ ctx.shadowColor="#00ff88";
+ ctx.shadowBlur=26;
+ ctx.stroke();
+ ctx.restore();
+
+ const bi=Math.floor(scrollX/beatPx);
+ const rAbs=(bi+.08)*beatPx;
+
+ if(bi!==lastFlip && scrollX>=rAbs){
+  lastFlip=bi;
+  flash.classList.remove("beat");
+  void flash.offsetWidth;
+  flash.classList.add("beat");
+ }
+}
+
+requestAnimationFrame(loop);
+
+});
+</script>
+
+</body>
+</html>
